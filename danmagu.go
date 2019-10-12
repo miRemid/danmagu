@@ -1,4 +1,4 @@
-package danmaku
+package danmagu
 
 import (
 	"log"
