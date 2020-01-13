@@ -2,15 +2,15 @@ package model
 
 // RHeader 收到消息头部信息
 type RHeader struct {
-	Length 		uint32
-	LHead    	uint32
-	Type   		uint32
-	Normal   	uint32
+	Length uint32
+	LHead  uint32
+	Type   uint32
+	Normal uint32
 }
 
 // Population 人气值
 type Population struct {
-	Value 		uint32
+	Value uint32
 }
 
 // CMD cmd消息
