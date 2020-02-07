@@ -5,9 +5,9 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"testing"
 
 	"github.com/fatih/color"
-	"github.com/miRemid/danmagu"
 	"github.com/miRemid/danmagu/model"
 )
 
@@ -19,13 +19,13 @@ func parse(message []byte) {
 	body := message[16:head.Length]
 
 	switch head.Type {
-	case danmagu.WsHeartbeatReply:
+	case WsHeartbeatReply:
 		var rqz model.Population
 		binary.Read(bytes.NewReader(body), binary.BigEndian, &rqz)
 		if rqz.Value > 1 {
 			fmt.Print(color.BlueString("当前人气值=%v\n", rqz.Value))
 		}
-	case danmagu.WsMessage:
+	case WsMessage:
 		var cmd model.CMD
 		_ = json.Unmarshal(body, &cmd)
 		switch cmd.Cmd {
@@ -49,8 +49,8 @@ func parse(message []byte) {
 	}
 }
 
-func main() {
-	client := danmagu.NewClient(0)
+func TestDanmagu(t *testing.T) {
+	client := NewClient(0)
 	client.DebugMode = true
 	client.BeforeListen = func() {
 		fmt.Println("\033[2J\033[100A")

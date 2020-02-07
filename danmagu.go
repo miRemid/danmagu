@@ -1,14 +1,15 @@
 package danmagu
 
 import (
-	"log"
-	"fmt"
-	"time"
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -20,27 +21,41 @@ const (
 
 const (
 	// WsHeartbeatSent 心跳
-	WsHeartbeatSent 	= 2
+	WsHeartbeatSent = 2
 	// WsHeartbeatReply 心跳响应
-	WsHeartbeatReply 	= 3
+	WsHeartbeatReply = 3
 	// WsMessage 消息
-	WsMessage 			= 5
+	WsMessage = 5
 	// WsAuth 认证
-	WsAuth				= 7
+	WsAuth = 7
 	// WsAuthSuccess 认证成功
-	WsAuthSuccess 		= 8
+	WsAuthSuccess = 8
 )
+
+// HandlerFunc 钩子函数
+type HandlerFunc func()
+
+func defaultHandlerFunc() {}
 
 // EventHandler 处理函数
 type EventHandler func(body []byte)
 
 // Client 客户端
 type Client struct {
-	uid    int
-	roomid int
-	token  string
-	conn   *websocket.Conn
+	uid     int
+	roomid  int
+	token   string
+	conn    *websocket.Conn
 	message EventHandler
+
+	DebugMode bool
+
+	AfterConnect  HandlerFunc
+	BeforeConnect HandlerFunc
+	AfterEnter    HandlerFunc
+	BeforeEnter   HandlerFunc
+	Listening     HandlerFunc
+	BeforeListen  HandlerFunc
 }
 
 type auth struct {
@@ -54,11 +69,11 @@ type auth struct {
 }
 
 type header struct {
-	Length 		uint32
-	LBody	 	uint16
-	Ver 		uint16
-	Opcode		uint32
-	Normal		uint32
+	Length uint32
+	LBody  uint16
+	Ver    uint16
+	Opcode uint32
+	Normal uint32
 }
 
 // NewClient 建立新客户端
@@ -66,22 +81,33 @@ func NewClient(uid int) *Client {
 	res := &Client{
 		uid: uid,
 	}
-	res.StartSocket()
+
+	res.BeforeConnect = defaultHandlerFunc
+	res.AfterConnect = defaultHandlerFunc
+	res.BeforeEnter = defaultHandlerFunc
+	res.AfterEnter = defaultHandlerFunc
+	res.BeforeListen = defaultHandlerFunc
+
 	return res
 }
 
+func (client *Client) debug(format string, a ...interface{}) {
+	if client.DebugMode {
+		log.Printf(format, a...)
+	}
+}
+
 // GetToken 获取房间token
-func GetToken(roomid int) string {
+func GetToken(roomid int) (string, error) {
 	// 1. 请求tokenURL
 	url := fmt.Sprintf("%s?roomid=%d&platform=pc&player=web", tokenURL, roomid)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		log.Printf("New Request Failed=%s\n", err.Error())
-		return ""
+		return "", err
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("Request Failed=%s\n", err.Error())
+		return "", err
 	}
 	defer res.Body.Close()
 	// 2. 获取token
@@ -90,69 +116,81 @@ func GetToken(roomid int) string {
 	json.Unmarshal(bytedata, &msg)
 	data := msg["data"].(map[string]interface{})
 	token := data["token"].(string)
-	return token
+	return token, nil
 }
 
-func (c *Client) send(data []byte, operation uint32) {
+func (client *Client) send(data []byte, operation uint32) {
 	h := header{uint32(binary.Size(data) + 16), 16, 1, operation, 1}
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.BigEndian, h)
-	c.conn.WriteMessage(websocket.BinaryMessage, []byte(fmt.Sprintf("%s%s", buf, data)))
+	client.conn.WriteMessage(websocket.BinaryMessage, []byte(fmt.Sprintf("%s%s", buf, data)))
 }
 
-// StartSocket 连接websocket服务器
-func (c *Client) StartSocket() {
-	log.Printf("try to connect...\n")
+func (client *Client) connect() {
+	client.BeforeConnect()
+	client.debug("try to connect...\n")
 	conn, _, err := websocket.DefaultDialer.Dial(socketURL, nil)
 	if err != nil {
-		log.Fatal(err.Error())
+		client.debug(err.Error())
+		os.Exit(1)
 	}
-	c.conn = conn
-	log.Printf("connect successful\n")
+	client.conn = conn
+	client.debug("connect successful\n")
+	client.AfterConnect()
 }
 
 // Listen 开始监听数据
 // t 心跳包发送间隔，30s以下
-func (c *Client) Listen(t time.Duration) {
-	log.Printf("start Listening roomid=%d\n", c.roomid)
-	c.startHeart(t)
+func (client *Client) Listen(t time.Duration) {
+
+	client.connect()
+	client.auth()
+
+	client.BeforeListen()
+	client.debug("start Listening roomid=%d\n", client.roomid)
+	client.startHeart(t)
 	for {
-		_, body, err := c.conn.ReadMessage()
+		_, body, err := client.conn.ReadMessage()
 		if err != nil {
 			log.Printf("connect failed... reconnect after 3s\n")
-			c.conn.Close()
+			client.conn.Close()
 			time.Sleep(time.Second * 3)
-			c.StartSocket()
+			client.connect()
 		}
-		go c.message(body)
+		go client.message(body)
 	}
 }
 
-// Auth 进入房间
-func (c *Client) Auth(roomid int) {
-	c.roomid = roomid	
+// Enter 进入房间
+func (client *Client) Enter(roomid int) {
+	client.roomid = roomid
+}
+
+func (client *Client) auth() {
+	client.BeforeEnter()
 	body, _ := json.Marshal(auth{
-		UID:       c.uid,
-		RoomID:    c.roomid,
+		UID:       client.uid,
+		RoomID:    client.roomid,
 		Protover:  1,
 		ClientVer: "1.4.0",
 		PlatForm:  "web",
 	})
-	c.send(body, WsAuth)
+	client.send(body, WsAuth)
+	client.AfterEnter()
 }
 
-func (c *Client) startHeart(t time.Duration) {
-	log.Printf("心跳包发送间隔为%ds\n", t)
+func (client *Client) startHeart(t time.Duration) {
+	client.debug("心跳包发送间隔为%ds\n", t)
 	go func(t time.Duration) {
 		for {
 			time.Sleep(time.Second * 5)
-			c.send([]byte(""), WsHeartbeatSent)			
+			client.send([]byte(""), WsHeartbeatSent)
 			time.Sleep(time.Second * (t - 5))
 		}
 	}(t)
 }
 
 // OnMessage 消息处理函数
-func (c *Client) OnMessage(handler EventHandler) {
-	c.message = handler
+func (client *Client) OnMessage(handler EventHandler) {
+	client.message = handler
 }
