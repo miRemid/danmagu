@@ -1,10 +1,11 @@
-package danmagu
+package main
 
 import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/fatih/color"
 	"github.com/miRemid/danmagu"
@@ -32,10 +33,12 @@ func parse(message []byte) {
 		case "DANMU_MSG":
 			var danmaku model.Danmaku
 			json.Unmarshal(body, &danmaku)
+			log.Println(string(body))
 			fmt.Print(color.GreenString("%s: %s\n", cmd.Info[2][1], danmaku.Info[1]))
 		case "SEND_GIFT":
 			var g model.Gift
 			json.Unmarshal(body, &g)
+			log.Println(string(body))
 			fmt.Print(color.RedString("%s: %s (%s) x %d\n", g.Data.Uname, g.Data.GiftName, g.Data.CoinType, g.Data.Num))
 		case "GUARD_BUY":
 			var g model.Guard
@@ -55,7 +58,7 @@ func main() {
 	client.BeforeListen = func() {
 		fmt.Println("\033[2J\033[100A")
 	}
-	client.Enter(21717356)
+	client.Enter(1029)
 	client.OnMessage(parse)
 	client.Listen(30)
 }

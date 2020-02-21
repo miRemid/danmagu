@@ -12,6 +12,8 @@ func parse(data []byte){
 func main() {
     // 创建一个连接，参数为本人uid，可以为0(功能暂停)
     client := danmagu.NewClient(0)
+    // 设置Debug模式
+    client.DebugMode = true
     // 进入房间
     client.Enter(roomid)
     // 设置消息处理函数
