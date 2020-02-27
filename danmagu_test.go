@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"testing"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/miRemid/danmagu/model"
@@ -57,7 +58,11 @@ func TestDanmagu(t *testing.T) {
 	client.BeforeListen = func() {
 		fmt.Println("\033[2J\033[100A")
 	}
-	client.Enter(1029)
+	client.Enter(8302109)
 	client.OnMessage(parse)
-	client.Listen(30)
+	go client.Listen(30)
+	select {
+	case <-time.After(5 * time.Second):
+		client.Cancle()
+	}
 }

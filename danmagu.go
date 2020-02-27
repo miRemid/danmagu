@@ -56,6 +56,8 @@ type Client struct {
 	BeforeEnter   HandlerFunc
 	Listening     HandlerFunc
 	BeforeListen  HandlerFunc
+
+	stop bool
 }
 
 type auth struct {
@@ -150,6 +152,11 @@ func (client *Client) Listen(t time.Duration) {
 	client.debug("start Listening roomid=%d\n", client.roomid)
 	client.startHeart(t)
 	for {
+		if client.stop {
+			client.stop = false
+			client.debug("stop listening")
+			return
+		}
 		_, body, err := client.conn.ReadMessage()
 		if err != nil {
 			log.Printf("connect failed... reconnect after 3s\n")
@@ -193,4 +200,9 @@ func (client *Client) startHeart(t time.Duration) {
 // OnMessage 消息处理函数
 func (client *Client) OnMessage(handler EventHandler) {
 	client.message = handler
+}
+
+// Cancle 取消监听
+func (client *Client) Cancle() {
+	client.stop = true
 }
