@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/miRemid/danmagu/model"
 )
 
 const (
@@ -37,16 +38,12 @@ type HandlerFunc func()
 
 func defaultHandlerFunc() {}
 
-// EventHandler 处理函数
-type EventHandler func(body []byte)
-
 // Client 客户端
 type Client struct {
-	uid     int
-	roomid  int
-	token   string
-	conn    *websocket.Conn
-	message EventHandler
+	uid    int
+	roomid int
+	token  string
+	conn   *websocket.Conn
 
 	DebugMode bool
 
@@ -57,6 +54,11 @@ type Client struct {
 	Listening     HandlerFunc
 	BeforeListen  HandlerFunc
 
+	DanmakuHandler   func(danmaku model.Danmaku)
+	HeartBeatHandler func(heart model.HeartBeat)
+	GiftHandler      func(git model.Gift)
+	GuardHandler     func(guard model.Guard)
+
 	stop bool
 }
 
@@ -66,8 +68,6 @@ type auth struct {
 	Protover  int    `json:"protover"`
 	PlatForm  string `json:"platform"`
 	ClientVer string `json:"clientver"`
-	// Type      int    `json:"type"`
-	// Token     string `json:"token"`
 }
 
 type header struct {
@@ -89,6 +89,16 @@ func NewClient(uid int) *Client {
 	res.BeforeEnter = defaultHandlerFunc
 	res.AfterEnter = defaultHandlerFunc
 	res.BeforeListen = defaultHandlerFunc
+
+	res.HeartBeatHandler = func(hear model.HeartBeat) {
+		fmt.Println(hear.Value)
+	}
+	res.DanmakuHandler = func(danmaku model.Danmaku) {
+		fmt.Printf("%v:%v\n", danmaku.Nickname, danmaku.Content)
+	}
+	res.GiftHandler = func(gift model.Gift) {
+		fmt.Println(gift.Uname)
+	}
 
 	return res
 }
@@ -144,10 +154,8 @@ func (client *Client) connect() {
 // Listen 开始监听数据
 // t 心跳包发送间隔，30s以下
 func (client *Client) Listen(t time.Duration) {
-
 	client.connect()
 	client.auth()
-
 	client.BeforeListen()
 	client.debug("start Listening roomid=%d\n", client.roomid)
 	client.startHeart(t)
@@ -164,7 +172,7 @@ func (client *Client) Listen(t time.Duration) {
 			time.Sleep(time.Second * 3)
 			client.connect()
 		}
-		go client.message(body)
+		go client.parse(body)
 	}
 }
 
@@ -197,12 +205,62 @@ func (client *Client) startHeart(t time.Duration) {
 	}(t)
 }
 
-// OnMessage 消息处理函数
-func (client *Client) OnMessage(handler EventHandler) {
-	client.message = handler
-}
-
 // Cancle 取消监听
 func (client *Client) Cancle() {
 	client.stop = true
+}
+
+func (client *Client) parse(message []byte) {
+	h := message[:16]
+	var head model.RHeader
+	buf := bytes.NewReader(h)
+	binary.Read(buf, binary.BigEndian, &head)
+	body := message[16:head.Length]
+
+	switch head.Type {
+	case WsHeartbeatReply:
+		var rqz model.HeartBeat
+		binary.Read(bytes.NewReader(body), binary.BigEndian, &rqz)
+		go client.HeartBeatHandler(rqz)
+	case WsMessage:
+		var cmd model.CMD
+		fmt.Println(string(body))
+		_ = json.Unmarshal(body, &cmd)
+		switch cmd.Cmd {
+		case "DANMU_MSG":
+			var info model.Infomation
+			if err := json.Unmarshal(body, &info); err != nil {
+				log.Println(err)
+			} else {
+				var danmaku model.Danmaku
+				danmaku.Nickname = cmd.Info[2][1].(string)
+				danmaku.Content = info.Info[1].(string)
+				v, ok := cmd.Info[2][0].(float64)
+				if !ok {
+					log.Println("获取uid错误")
+				} else {
+					danmaku.UID = int(v)
+					go client.DanmakuHandler(danmaku)
+				}
+			}
+		case "SEND_GIFT":
+			var g model.GiftCmd
+			if err := json.Unmarshal(body, &g); err != nil {
+				log.Println(err)
+			} else {
+				go client.GiftHandler(g.Data)
+			}
+		case "GUARD_BUY":
+			var g model.GuardCmd
+			if err := json.Unmarshal(body, &g); err != nil {
+				log.Println(err)
+			} else {
+				go client.GuardHandler(g.Data)
+			}
+		}
+	}
+	next := message[head.Length:]
+	if binary.Size(next) != 0 {
+		go client.parse(next)
+	}
 }
