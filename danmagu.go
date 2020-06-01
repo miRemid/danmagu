@@ -99,6 +99,9 @@ func NewClient(uid int) *Client {
 	res.GiftHandler = func(gift model.Gift) {
 		fmt.Println(gift.Uname)
 	}
+	res.GuardHandler = func(guard model.Guard) {
+		fmt.Println(guard.Username, guard.GiftName)
+	}
 
 	return res
 }
@@ -224,7 +227,6 @@ func (client *Client) parse(message []byte) {
 		go client.HeartBeatHandler(rqz)
 	case WsMessage:
 		var cmd model.CMD
-		fmt.Println(string(body))
 		_ = json.Unmarshal(body, &cmd)
 		switch cmd.Cmd {
 		case "DANMU_MSG":
