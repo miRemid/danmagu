@@ -1,40 +1,24 @@
-package danmagu
+package danmagu_test
 
 import (
-	"fmt"
+	"context"
+	"log"
 	"testing"
-	"time"
 
-	"github.com/miRemid/danmagu/model"
+	"github.com/miRemid/danmagu/client"
+	"github.com/miRemid/danmagu/message"
 )
 
-var cnt chan int
+func TestDanmaku(t *testing.T) {
+	cli := client.NewClient(271744, &client.ClientConfig{
+		HeartBeatTime: 30,
+	})
 
-func test(danmaku model.Danmaku) {
-	fmt.Println(danmaku.Nickname, ":", danmaku.Content)
-	cnt <- 1
-}
-func TestDanmagu(t *testing.T) {
-	cnt = make(chan int)
-	count := 0
-	client := NewClient(0)
-	client.DebugMode = true
-	client.BeforeListen = func() {
-		fmt.Println("\033[2J\033[100A")
-	}
-	client.DanmakuHandler = test
-	client.Enter(12235923)
-	go client.Listen(30)
-	timeout := time.After(5 * time.Minute)
-	for {
-		select {
-		case <-timeout:
-			client.Cancle()
-			fmt.Printf("共耗时5分钟，共收到弹幕: %v条\n", count)
-			return
-		case <-cnt:
-			count++
-			break
-		}
+	cli.Handler(message.DANMU_MSG, func(ctx context.Context, danmaku message.Danmaku) {
+		log.Println(danmaku.Content)
+	})
+
+	if err := cli.Listen(); err != nil {
+		log.Println(err)
 	}
 }
