@@ -5,12 +5,12 @@ import (
 	"log"
 	"testing"
 
-	"github.com/miRemid/danmagu/client"
+	"github.com/miRemid/danmagu"
 	"github.com/miRemid/danmagu/message"
 )
 
 func TestDanmaku(t *testing.T) {
-	cli := client.NewClient(271744, &client.ClientConfig{
+	cli := danmagu.NewClient(56159, &danmagu.ClientConfig{
 		HeartBeatTime: 30,
 	})
 

@@ -11,12 +11,31 @@ const (
 	COMBO_SEND        = "COMBO_SEND"
 	WIDGET_BANNER     = "WIDGET_BANNER"
 	ENTRY_EFFECT      = "ENTRY_EFFECT"
+	RQZ               = "RQZ"
+	DEFAULT           = "DEFAULT"
+	LIVE              = "LIVE"
+	PREPARING         = "PREPARING"
 )
 
 type Danmaku struct {
 	Content  string
 	Username string
 	UID      uint
+}
+
+type Preparing struct {
+	Cmd    string `json:"cmd"`
+	RoomID string `json:"roomid"`
+}
+
+type Live struct {
+	Cmd             string `json:"cmd"`
+	LiveKey         string `json:"live_key"`
+	VoiceBackground string `json:"voice_background"`
+	SubSessionKey   string `json:"sub_session_key"`
+	LivePlatform    string `json:"live_platform"`
+	LiveModel       int    `json:"live_model"`
+	Roomid          int    `json:"roomid"`
 }
 
 type RoomRank struct {

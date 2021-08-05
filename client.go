@@ -1,4 +1,4 @@
-package client
+package danmagu
 
 import (
 	"bytes"
@@ -28,13 +28,12 @@ type LiveClient struct {
 
 	heartBeatErr chan error
 	recieveErr   chan error
+	close        chan struct{}
 
 	rawQueue chan *message.Message
 	msgQueue chan *message.Context
 
 	funcs map[string]HandlerFunc
-
-	defalutHandler DefaultHandler
 }
 
 func NewClient(roomid uint32, opt *ClientConfig) *LiveClient {
@@ -44,11 +43,20 @@ func NewClient(roomid uint32, opt *ClientConfig) *LiveClient {
 
 	cli.heartBeatErr = make(chan error, 1)
 	cli.recieveErr = make(chan error, 1)
+	cli.close = make(chan struct{}, 1)
 	cli.rawQueue = make(chan *message.Message)
 	cli.msgQueue = make(chan *message.Context)
 
 	cli.funcs = defaultFuncs
 	return &cli
+}
+
+func (cli *LiveClient) Close() {
+	close(cli.heartBeatErr)
+	close(cli.recieveErr)
+	close(cli.rawQueue)
+	close(cli.msgQueue)
+	cli.close <- struct{}{}
 }
 
 func (cli *LiveClient) Handler(cmd string, handler HandlerFunc) {
@@ -88,8 +96,10 @@ func (cli *LiveClient) heartBeat(ctx context.Context) {
 		log.Println("Send Heart Beat Packet")
 		select {
 		case <-ctx.Done():
+		case <-cli.close:
 			return
 		default:
+			log.Println("Send")
 			if err := cli.Send([]byte(""), message.WsHeartbeatSent); err != nil {
 				cli.heartBeatErr <- err
 				return
@@ -104,22 +114,22 @@ func (cli *LiveClient) recieve(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+		case <-cli.close:
 			return
 		default:
-			break
-		}
-		_, body, err := cli.conn.ReadMessage()
-		if err != nil {
-			if count != 5 {
-				count++
-				continue
+			_, body, err := cli.conn.ReadMessage()
+			if err != nil {
+				if count != 5 {
+					count++
+					continue
+				}
+				DPrintf("RoomID=%d Read Message Error...", cli.roomid)
+				cli.recieveErr <- err
+				return
 			}
-			log.Printf("RoomID=%d Read Message Error...", cli.roomid)
-			cli.recieveErr <- err
-			return
+			msg := message.NewMessage(body)
+			cli.rawQueue <- msg
 		}
-		msg := message.NewMessage(body)
-		cli.rawQueue <- msg
 	}
 }
 
@@ -135,9 +145,9 @@ func (cli *LiveClient) split(ctx context.Context) {
 		for len(msg.Body) > 0 {
 			select {
 			case <-ctx.Done():
+			case <-cli.close:
 				return
 			default:
-				break
 			}
 
 			headerBuffer = bytes.NewReader(msg.Body[:message.HeaderLength])
@@ -163,9 +173,9 @@ func (cli *LiveClient) parse(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+		case <-cli.close:
 			return
 		default:
-			break
 		}
 
 		msg := <-cli.msgQueue
@@ -176,7 +186,6 @@ func (cli *LiveClient) parse(ctx context.Context) {
 			binary.Read(buffer, binary.BigEndian, &rqz)
 			handler := cli.funcs["RQZ"].(RQZHandler)
 			go handler(ctx, rqz)
-			break
 		case message.WsMessage:
 			cmd := gjson.GetBytes(msg.Buffer, "cmd").String()
 			switch cmd {
@@ -189,7 +198,6 @@ func (cli *LiveClient) parse(ctx context.Context) {
 				danmaku.Username = userInfo[1].String()
 				handler := cli.funcs[cmd].(DanmakuHandler)
 				go handler(ctx, danmaku)
-				break
 			case message.SEND_GIFT:
 				var gift message.SendGift
 				if err := tools.Unmarshal(msg.Buffer, &gift); err != nil {
@@ -198,7 +206,6 @@ func (cli *LiveClient) parse(ctx context.Context) {
 				}
 				handler := cli.funcs[cmd].(GiftHandler)
 				go handler(ctx, gift)
-				break
 			case message.INTERACT_WORD:
 				var word message.InteractWord
 				if err := tools.Unmarshal(msg.Buffer, &word); err != nil {
@@ -207,7 +214,6 @@ func (cli *LiveClient) parse(ctx context.Context) {
 				}
 				handler := cli.funcs[cmd].(InteractWordHandler)
 				go handler(ctx, word)
-				break
 			case message.ONLINE_RANK_V2:
 				var item message.OnlineRankV2
 				if err := tools.Unmarshal(msg.Buffer, &item); err != nil {
@@ -216,7 +222,6 @@ func (cli *LiveClient) parse(ctx context.Context) {
 				}
 				handler := cli.funcs[cmd].(RankV2Handler)
 				go handler(ctx, item)
-				break
 			case message.ONLINE_RANK_TOP3:
 				var item message.OnlineRankTOP3
 				if err := tools.Unmarshal(msg.Buffer, &item); err != nil {
@@ -225,7 +230,6 @@ func (cli *LiveClient) parse(ctx context.Context) {
 				}
 				handler := cli.funcs[cmd].(RankTOP3Handler)
 				go handler(ctx, item)
-				break
 			case message.COMBO_SEND:
 				var item message.ComboSend
 				if err := tools.Unmarshal(msg.Buffer, &item); err != nil {
@@ -234,7 +238,6 @@ func (cli *LiveClient) parse(ctx context.Context) {
 				}
 				handler := cli.funcs[cmd].(ComboSendHandler)
 				go handler(ctx, item)
-				break
 			case message.WIDGET_BANNER:
 				var item message.WidgetBanner
 				if err := tools.Unmarshal(msg.Buffer, &item); err != nil {
@@ -243,7 +246,6 @@ func (cli *LiveClient) parse(ctx context.Context) {
 				}
 				handler := cli.funcs[cmd].(WidgetBannerHandler)
 				go handler(ctx, item)
-				break
 			case message.ENTRY_EFFECT:
 				var item message.EntryEffect
 				if err := tools.Unmarshal(msg.Buffer, &item); err != nil {
@@ -252,7 +254,6 @@ func (cli *LiveClient) parse(ctx context.Context) {
 				}
 				handler := cli.funcs[cmd].(EntryEffectHandler)
 				go handler(ctx, item)
-				break
 			case message.ONLINE_RANK_COUNT:
 				var item message.OnlineRankCount
 				if err := tools.Unmarshal(msg.Buffer, &item); err != nil {
@@ -261,7 +262,6 @@ func (cli *LiveClient) parse(ctx context.Context) {
 				}
 				handler := cli.funcs[cmd].(RankCountHandler)
 				go handler(ctx, item)
-				break
 			case message.ROOM_RANK:
 				var item message.RoomRank
 				if err := tools.Unmarshal(msg.Buffer, &item); err != nil {
@@ -270,21 +270,30 @@ func (cli *LiveClient) parse(ctx context.Context) {
 				}
 				handler := cli.funcs[cmd].(RoomRankHandler)
 				go handler(ctx, item)
-				break
+			case message.LIVE:
+				var item message.Live
+				if err := tools.Unmarshal(msg.Buffer, &item); err != nil {
+					cli.errorHandler(cmd, err)
+				}
+				handler := cli.funcs[cmd].(LiveHandler)
+				go handler(ctx, item)
+			case message.PREPARING:
+				var item message.Preparing
+				if err := tools.Unmarshal(msg.Buffer, &item); err != nil {
+					cli.errorHandler(cmd, err)
+				}
+				handler := cli.funcs[cmd].(PreparingHandler)
+				go handler(ctx, item)
 			default:
 				handler := cli.funcs["DEFAULT"].(DefaultHandler)
 				go handler(ctx, msg)
-				break
 			}
-			break
-		default:
-			break
 		}
 	}
 }
 
 func (cli *LiveClient) errorHandler(cmd string, err error) {
-	log.Printf("[ERROR] %s: %v", cmd, err)
+	DPrintf("[ERROR] %s: %v", cmd, err)
 }
 
 func (cli *LiveClient) Listen() error {
@@ -305,7 +314,7 @@ func (cli *LiveClient) Listen() error {
 	for _, url := range urls {
 		cli.conn, _, err = websocket.DefaultDialer.Dial(fmt.Sprintf("wss://%s:443/sub", url), nil)
 		if err != nil {
-			log.Printf("Connect to the %s failed... Trying next one.", url)
+			DPrintf("Connect to the %s failed... Trying next one.", url)
 			continue
 		}
 		log.Println("Connect to the danmaku server successful!")
@@ -322,7 +331,7 @@ func (cli *LiveClient) Listen() error {
 		return err
 	}
 
-	log.Printf("Start Listening RoomID = %d", cli.roomid)
+	DPrintf("Start Listening RoomID = %d", cli.roomid)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -338,6 +347,8 @@ func (cli *LiveClient) Listen() error {
 	case err := <-cli.recieveErr:
 		return err
 	case <-ctx.Done():
+	case <-cli.close:
 		return nil
 	}
+	return nil
 }
