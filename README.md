@@ -6,11 +6,11 @@ package main
 import (
 	"log"
 
-    "github.com/miRemid/danmagu/client"
+    "github.com/miRemid/danmagu"
     "github.com/miRemid/danmagu/message"
 )
-func main(t *testing.T) {
-	cli := client.NewClient(271744, &client.ClientConfig{
+func main() {
+	cli := danmagu.NewClient(271744, &danmagu.ClientConfig{
 		HeartBeatTime: 30,
     })
 
@@ -25,4 +25,4 @@ func main(t *testing.T) {
 ```
 
 # Handler
-Handler函数是针对不同消息的处理函数，具体方法的参数请看`client/function.go`
+Handler函数是针对不同消息的处理函数，具体方法的参数请看`function.go`

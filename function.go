@@ -2,7 +2,6 @@ package danmagu
 
 import (
 	"context"
-	"log"
 
 	"github.com/fatih/color"
 	"github.com/miRemid/danmagu/message"
@@ -25,7 +24,7 @@ var (
 			DPrintf("%s: %d", green("人气值"), rqz)
 		},
 		message.DEFAULT: func(c1 context.Context, c2 *message.Context) {
-			log.Println(string(c2.Buffer))
+			DPrintf(string(c2.Buffer))
 		},
 		message.SEND_GIFT: func(ctx context.Context, gift message.SendGift) {
 			DPrintf("%s = %s", green("礼物名称"), blue(gift.Data.GiftName))

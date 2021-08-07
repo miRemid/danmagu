@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/asmcos/requests"
@@ -56,6 +55,7 @@ func (cli *LiveClient) Close() {
 	close(cli.recieveErr)
 	close(cli.rawQueue)
 	close(cli.msgQueue)
+	cli.conn.Close()
 	cli.close <- struct{}{}
 }
 
@@ -93,13 +93,12 @@ func (cli *LiveClient) Send(data []byte, operation uint32) error {
 
 func (cli *LiveClient) heartBeat(ctx context.Context) {
 	for {
-		log.Println("Send Heart Beat Packet")
+		DPrintf("Send Heart Beat Packet")
 		select {
 		case <-ctx.Done():
 		case <-cli.close:
 			return
 		default:
-			log.Println("Send")
 			if err := cli.Send([]byte(""), message.WsHeartbeatSent); err != nil {
 				cli.heartBeatErr <- err
 				return
@@ -111,14 +110,24 @@ func (cli *LiveClient) heartBeat(ctx context.Context) {
 
 func (cli *LiveClient) recieve(ctx context.Context) {
 	count := 0
+	closeConn := make(chan struct{}, 1)
 	for {
 		select {
 		case <-ctx.Done():
 		case <-cli.close:
 			return
+		case <-closeConn:
+			DPrintf("reconnecting...")
+			cli.connect()
+			count = 0
 		default:
 			_, body, err := cli.conn.ReadMessage()
 			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					DPrintf("Unexpected Close Error")
+					closeConn <- struct{}{}
+					continue
+				}
 				if count != 5 {
 					count++
 					continue
@@ -296,8 +305,26 @@ func (cli *LiveClient) errorHandler(cmd string, err error) {
 	DPrintf("[ERROR] %s: %v", cmd, err)
 }
 
-func (cli *LiveClient) Listen() error {
+func (cli *LiveClient) connect() (string, error) {
 	token, urls, err := cli.GetTokenAndURLS()
+	if err != nil {
+		return "", err
+	}
+	for _, url := range urls {
+		cli.conn, _, err = websocket.DefaultDialer.Dial(fmt.Sprintf("wss://%s:443/sub", url), nil)
+		if err != nil {
+			DPrintf("connect to the %s failed... Trying next one.", url)
+			continue
+		}
+	}
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func (cli *LiveClient) Listen() error {
+	token, err := cli.connect()
 	if err != nil {
 		return err
 	}
@@ -310,20 +337,6 @@ func (cli *LiveClient) Listen() error {
 		Type:      2,
 		Key:       token,
 	}
-	// Try to connect
-	for _, url := range urls {
-		cli.conn, _, err = websocket.DefaultDialer.Dial(fmt.Sprintf("wss://%s:443/sub", url), nil)
-		if err != nil {
-			DPrintf("Connect to the %s failed... Trying next one.", url)
-			continue
-		}
-		log.Println("Connect to the danmaku server successful!")
-		break
-	}
-	if err != nil {
-		return err
-	}
-
 	// send auth message
 	data, _ := json.Marshal(auth)
 	if err := cli.Send(data, message.WsAuth); err != nil {
