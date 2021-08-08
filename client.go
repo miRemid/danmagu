@@ -6,9 +6,10 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
-	"github.com/asmcos/requests"
 	"github.com/gorilla/websocket"
 	"github.com/miRemid/danmagu/message"
 	"github.com/miRemid/danmagu/tools"
@@ -23,6 +24,7 @@ const (
 type LiveClient struct {
 	cfg    *ClientConfig
 	conn   *websocket.Conn
+	client *http.Client
 	roomid uint32
 
 	heartBeatErr chan error
@@ -39,6 +41,9 @@ func NewClient(roomid uint32, opt *ClientConfig) *LiveClient {
 	var cli LiveClient
 	cli.cfg = opt
 	cli.roomid = roomid
+	cli.client = &http.Client{
+		Timeout: opt.HttpTimeout,
+	}
 
 	cli.heartBeatErr = make(chan error, 1)
 	cli.recieveErr = make(chan error, 1)
@@ -64,13 +69,17 @@ func (cli *LiveClient) Handler(cmd string, handler HandlerFunc) {
 }
 
 func (cli *LiveClient) GetTokenAndURLS() (string, []string, error) {
-	r, err := requests.Get(fmt.Sprintf(ROOMINFO_URL, cli.roomid))
+	req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf(ROOMINFO_URL, cli.roomid), nil)
+	resp, err := cli.client.Do(req)
 	if err != nil {
 		return "", nil, err
 	}
+	defer resp.Body.Close()
+	var buf bytes.Buffer
+	io.Copy(&buf, resp.Body)
 	var urls = make([]string, 0)
-	token := gjson.Get(r.Text(), "data.token").String()
-	gjson.Get(r.Text(), "data.host_list").ForEach(func(key, value gjson.Result) bool {
+	token := gjson.GetBytes(buf.Bytes(), "data.token").String()
+	gjson.GetBytes(buf.Bytes(), "data.host_list").ForEach(func(key, value gjson.Result) bool {
 		urls = append(urls, value.Get("host").String())
 		return true
 	})
@@ -104,7 +113,7 @@ func (cli *LiveClient) heartBeat(ctx context.Context) {
 				return
 			}
 		}
-		time.Sleep(time.Second * cli.cfg.HeartBeatTime)
+		time.Sleep(cli.cfg.HeartBeatTime)
 	}
 }
 

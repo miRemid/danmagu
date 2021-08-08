@@ -8,6 +8,6 @@ var (
 
 func DPrintf(format string, args ...interface{}) {
 	if LOG_TOGGLE {
-		log.Printf(format, args...)
+		log.Printf("[DEBUG] "+format, args...)
 	}
 }
