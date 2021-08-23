@@ -34,7 +34,8 @@ type LiveClient struct {
 	rawQueue chan *message.Message
 	msgQueue chan *message.Context
 
-	funcs map[string]HandlerFunc
+	funcs      map[string]HandlerFunc
+	rawHandler map[string]RawHandler
 }
 
 func NewClient(roomid uint32, opt *ClientConfig) *LiveClient {
@@ -52,6 +53,7 @@ func NewClient(roomid uint32, opt *ClientConfig) *LiveClient {
 	cli.msgQueue = make(chan *message.Context)
 
 	cli.funcs = defaultFuncs
+	cli.rawHandler = make(map[string]RawHandler)
 	return &cli
 }
 
@@ -66,6 +68,10 @@ func (cli *LiveClient) Close() {
 
 func (cli *LiveClient) Handler(cmd string, handler HandlerFunc) {
 	cli.funcs[cmd] = handler
+}
+
+func (cli *LiveClient) RawHandler(cmd string, handler RawHandler) {
+	cli.rawHandler[cmd] = handler
 }
 
 func (cli *LiveClient) GetTokenAndURLS() (string, []string, error) {
@@ -303,8 +309,12 @@ func (cli *LiveClient) parse(ctx context.Context) {
 				handler := cli.funcs[cmd].(PreparingHandler)
 				go handler(ctx, item)
 			default:
-				handler := cli.funcs["DEFAULT"].(DefaultHandler)
-				go handler(ctx, msg)
+				if h, ok := cli.rawHandler[cmd]; ok {
+					go h(ctx, msg)
+				} else {
+					handler := cli.funcs["DEFAULT"].(DefaultHandler)
+					go handler(ctx, msg)
+				}
 			}
 		}
 	}

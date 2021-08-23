@@ -2,6 +2,7 @@ package danmagu_test
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"testing"
 	"time"
@@ -19,10 +20,13 @@ func TestDanmaku(t *testing.T) {
 	cli.Handler(message.DANMU_MSG, func(ctx context.Context, danmaku message.Danmaku) {
 		log.Println(danmaku.Content)
 	})
-	// go func() {
-	// 	time.Sleep(10 * time.Second)
-	// 	cli.Close()
-	// }()
+
+	cli.RawHandler("ROOM_BLOCK_MSG", func(ctx context.Context, msg *message.Context) {
+		var mapper = make(map[string]interface{})
+		json.Unmarshal(msg.Buffer, &mapper)
+		log.Println(mapper)
+	})
+
 	if err := cli.Listen(); err != nil {
 		log.Println(err)
 	}

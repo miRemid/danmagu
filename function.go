@@ -61,6 +61,10 @@ var (
 	}
 )
 
+type RawHandler func(ctx context.Context, msg *message.Context)
+
+type DefaultHandler = RawHandler
+
 type DanmakuHandler = func(context.Context, message.Danmaku)
 
 type RQZHandler = func(context.Context, uint32)
@@ -80,8 +84,6 @@ type WidgetBannerHandler = func(ctx context.Context, banner message.WidgetBanner
 type EntryEffectHandler = func(ctx context.Context, entry message.EntryEffect)
 
 type RankCountHandler = func(ctx context.Context, count message.OnlineRankCount)
-
-type DefaultHandler = func(context.Context, *message.Context)
 
 type RoomRankHandler = func(context.Context, message.RoomRank)
 
