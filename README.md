@@ -26,7 +26,8 @@ func main() {
 	// 注册未序列化函数
 	cli.RawHandler("ROOM_BLOCK_MSG", func(ctx context.Context, msg *message.Context) {
 		var mapper = make(map[string]interface{})
-		json.	
+		json.Unmarshal(msg.Buffer, &mapper)
+		log.Println(mapper)
 	})
     
 	if err := cli.Listen(); err != nil {
